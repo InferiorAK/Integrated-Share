@@ -4,6 +4,13 @@
     const selectBtn = document.getElementById('selectFilesBtn');
     const fileListContainer = document.getElementById('fileList');
     const fileCountSpan = document.getElementById('fileCount');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const progressFill = document.getElementById('progressFill');
+    const progressText = document.getElementById('progressText');
+    const clearAllBtn = document.getElementById('clearAllBtn');
+
+    // API Base URL
+    const API_BASE = window.location.origin;
 
     function formatFileSize(bytes) {
         if (bytes === 0) return '0 B';
@@ -28,22 +35,18 @@
     }
 
     function createFileItem(fileData) {
-        let fileName, fileSize, fileDate;
-        if (fileData instanceof File) {
-            fileName = fileData.name;
-            fileSize = fileData.size;
-            fileDate = 'just now';
-        } else {
-            fileName = fileData.name;
-            fileSize = fileData.size;
-            fileDate = fileData.date || 'shared 1 hour ago';
-        }
+        const fileName = fileData.original_name || fileData.name;
+        const fileSize = fileData.size;
+        const fileId = fileData.id;
+        const storedName = fileData.stored_name;
+        const fileDate = fileData.date || new Date(fileData.uploaded_at * 1000).toLocaleString();
 
         const sizeFormatted = formatFileSize(fileSize);
         const iconClass = getFileIconClass(fileName);
 
         const itemDiv = document.createElement('div');
         itemDiv.className = 'file-item';
+        itemDiv.dataset.id = fileId;
 
         const iconSpan = document.createElement('span');
         iconSpan.className = 'file-icon';
@@ -64,78 +67,222 @@
         const actionsDiv = document.createElement('div');
         actionsDiv.className = 'file-actions';
 
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'icon-btn';
-        copyBtn.title = 'Copy mock link';
-        copyBtn.innerHTML = '<i class="fas fa-link"></i>';
-        copyBtn.addEventListener('click', (e) => {
+        const shareBtn = document.createElement('button');
+        shareBtn.className = 'icon-btn';
+        shareBtn.title = 'Share file';
+        shareBtn.innerHTML = '<i class="fas fa-share-alt"></i>';
+        shareBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            alert(`🔗 Mock: link for "${fileName}" copied (demo)`);
+            shareFile(fileId, fileName);
         });
 
         const downloadBtn = document.createElement('button');
         downloadBtn.className = 'icon-btn';
-        downloadBtn.title = 'Download (mock)';
+        downloadBtn.title = 'Download';
         downloadBtn.innerHTML = '<i class="fas fa-download"></i>';
         downloadBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            alert(`⬇️ Mock download: "${fileName}" (no actual file)`);
+            downloadFile(storedName, fileName);
         });
 
-        actionsDiv.appendChild(copyBtn);
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'icon-btn';
+        deleteBtn.title = 'Delete';
+        deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+        deleteBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteFile(fileId, itemDiv);
+        });
+
+        actionsDiv.appendChild(shareBtn);
         actionsDiv.appendChild(downloadBtn);
+        actionsDiv.appendChild(deleteBtn);
         itemDiv.appendChild(actionsDiv);
 
         return itemDiv;
     }
 
-    function addFilesToUI(files, prepend = true) {
+    async function loadFiles() {
+        try {
+            const response = await fetch(`${API_BASE}/api/files`);
+            const files = await response.json();
+            
+            fileListContainer.innerHTML = '';
+            
+            if (files.length === 0) {
+                showEmptyPlaceholder();
+            } else {
+                files.forEach(file => {
+                    const fileItem = createFileItem(file);
+                    fileListContainer.appendChild(fileItem);
+                });
+            }
+            
+            updateFileCount();
+        } catch (error) {
+            console.error('Error loading files:', error);
+            showError('Failed to load files');
+        }
+    }
+
+    async function uploadFiles(files) {
         if (!files || files.length === 0) return;
 
-        const emptyPlaceholder = document.getElementById('emptyPlaceholder');
-        if (emptyPlaceholder) emptyPlaceholder.remove();
-
-        const fragment = document.createDocumentFragment();
+        const formData = new FormData();
         for (let i = 0; i < files.length; i++) {
-            const fileItem = createFileItem(files[i]);
-            fragment.appendChild(fileItem);
+            formData.append('files', files[i]);
         }
 
-        if (prepend) {
-            fileListContainer.prepend(fragment);
-        } else {
-            fileListContainer.appendChild(fragment);
-        }
+        // Show progress bar
+        uploadProgress.style.display = 'block';
+        progressFill.style.width = '0%';
+        progressText.textContent = 'Uploading...';
 
-        updateFileCount();
+        try {
+            const response = await fetch(`${API_BASE}/api/upload`, {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            if (response.ok && result.success) {
+                progressFill.style.width = '100%';
+                progressText.textContent = 'Upload complete!';
+                
+                // Reload files
+                await loadFiles();
+                
+                setTimeout(() => {
+                    uploadProgress.style.display = 'none';
+                }, 2000);
+            } else {
+                throw new Error(result.error || 'Upload failed');
+            }
+        } catch (error) {
+            console.error('Upload error:', error);
+            progressText.textContent = 'Upload failed';
+            progressFill.style.width = '0%';
+            showError('Failed to upload files');
+            
+            setTimeout(() => {
+                uploadProgress.style.display = 'none';
+            }, 3000);
+        }
+    }
+
+    async function shareFile(fileId, fileName) {
+        try {
+            const response = await fetch(`${API_BASE}/api/share/${fileId}`, {
+                method: 'POST'
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                // Copy to clipboard
+                await navigator.clipboard.writeText(result.share_link);
+                alert(`[+] Share link for "${fileName}" copied to clipboard!`);
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            console.error('Share error:', error);
+            alert('[X] Failed to generate share link');
+        }
+    }
+
+    function downloadFile(storedName, fileName) {
+        window.location.href = `${API_BASE}/api/download/${storedName}`;
+    }
+
+    async function deleteFile(fileId, fileElement) {
+        if (!confirm('Are you sure you want to delete this file?')) return;
+
+        try {
+            const response = await fetch(`${API_BASE}/api/delete/${fileId}`, {
+                method: 'DELETE'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                fileElement.remove();
+                updateFileCount();
+                
+                if (fileListContainer.children.length === 0) {
+                    showEmptyPlaceholder();
+                }
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            console.error('Delete error:', error);
+            alert('[X] Failed to delete file');
+        }
+    }
+
+    async function clearAllFiles() {
+        if (!confirm('! Are you sure you want to delete ALL files?')) return;
+
+        try {
+            const response = await fetch(`${API_BASE}/api/clear`, {
+                method: 'POST'
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                await loadFiles();
+                alert('[+] All files cleared');
+            } else {
+                throw new Error(result.error);
+            }
+        } catch (error) {
+            console.error('Clear error:', error);
+            alert('[X] Failed to clear files');
+        }
+    }
+
+    function showEmptyPlaceholder() {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.id = 'emptyPlaceholder';
+        emptyDiv.className = 'empty-files';
+        emptyDiv.innerHTML = `
+            <i class="fas fa-share-from-square"></i>
+            <p>No shared files yet — upload something!</p>
+        `;
+        fileListContainer.appendChild(emptyDiv);
     }
 
     function updateFileCount() {
-        const items = fileListContainer.querySelectorAll('.file-item:not(#emptyPlaceholder)');
+        const items = fileListContainer.querySelectorAll('.file-item');
         const count = items.length;
         fileCountSpan.textContent = count + (count === 1 ? ' item' : ' items');
     }
 
-    function handleFiles(fileList) {
-        if (!fileList || fileList.length === 0) return;
-        const filesArray = Array.from(fileList);
-        addFilesToUI(filesArray, true);
+    function showError(message) {
+        // Simple error notification
+        const errorDiv = document.createElement('div');
+        errorDiv.style.cssText = `
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #ff4444;
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            z-index: 1000;
+        `;
+        errorDiv.textContent = message;
+        document.body.appendChild(errorDiv);
+        
+        setTimeout(() => {
+            errorDiv.remove();
+        }, 3000);
     }
 
-    const mockFiles = [
-        { name: 'vacation_planning.pdf', size: 2.4 * 1024 * 1024, date: 'shared 2 hours ago' },
-        { name: 'team_photo_2025.jpg', size: 5.1 * 1024 * 1024, date: 'shared yesterday' },
-        { name: 'presentation_deck.pptx', size: 3.8 * 1024 * 1024, date: 'shared 3 days ago' },
-        { name: 'notes_onboarding.txt', size: 128 * 1024, date: 'shared last week' }
-    ];
-
-    function loadMockFiles() {
-        if (fileListContainer.children.length === 0) {
-            mockFiles.forEach(mock => addFilesToUI([mock], false));
-        }
-        updateFileCount();
-    }
-
+    // Event Listeners
     dropZone.addEventListener('click', () => {
         fileInput.click();
     });
@@ -158,11 +305,11 @@
     dropZone.addEventListener('drop', (e) => {
         dropZone.classList.remove('dragover');
         const files = e.dataTransfer.files;
-        handleFiles(files);
+        uploadFiles(files);
     });
 
     fileInput.addEventListener('change', (e) => {
-        handleFiles(e.target.files);
+        uploadFiles(e.target.files);
         fileInput.value = '';
     });
 
@@ -171,57 +318,45 @@
         fileInput.click();
     });
 
-    function initPlaceholder() {
-        if (fileListContainer.children.length === 0) {
-            const emptyDiv = document.createElement('div');
-            emptyDiv.id = 'emptyPlaceholder';
-            emptyDiv.className = 'empty-files';
-            emptyDiv.innerHTML = `
-                <i class="fas fa-share-from-square"></i>
-                <p>No shared files yet — upload something!</p>
-            `;
-            fileListContainer.appendChild(emptyDiv);
-        }
+    if (clearAllBtn) {
+        clearAllBtn.addEventListener('click', clearAllFiles);
     }
 
-    initPlaceholder();
-    loadMockFiles();
-
-    window.addEventListener('load', function() {
-        if (fileListContainer.querySelectorAll('.file-item').length > 0) {
-            const placeholder = document.getElementById('emptyPlaceholder');
-            if (placeholder) placeholder.remove();
-            updateFileCount();
-        } else {
-            fileCountSpan.textContent = '0 items';
+    // Add progress bar styles
+    const style = document.createElement('style');
+    style.textContent = `
+        .upload-progress {
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f0f7ff;
+            border-radius: 1rem;
         }
-    });
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #d4e2fc;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+        .progress-fill {
+            height: 100%;
+            background: #1e4f8a;
+            transition: width 0.3s ease;
+            width: 0%;
+        }
+        #progressText {
+            font-size: 0.9rem;
+            color: #1e4f8a;
+        }
+        .clear-btn:hover {
+            background: #f0f7ff !important;
+            border-color: #ff4444 !important;
+            color: #ff4444 !important;
+        }
+    `;
+    document.head.appendChild(style);
 
-    const originalHandleFiles = handleFiles;
-    handleFiles = function(files) {
-        const placeholder = document.getElementById('emptyPlaceholder');
-        if (placeholder) placeholder.remove();
-        originalHandleFiles(files);
-    };
-    const boundHandleFiles = handleFiles.bind(this);
-    dropZone.addEventListener('drop', (e) => {
-        dropZone.classList.remove('dragover');
-        const files = e.dataTransfer.files;
-        boundHandleFiles(files);
-    });
-
-    fileInput.addEventListener('change', (e) => {
-        boundHandleFiles(e.target.files);
-        fileInput.value = '';
-    });
-
-    window.boundHandleFiles = boundHandleFiles;
-
-    const originalAddFilesToUI = addFilesToUI;
-    window.addFilesToUI = function(files, prepend) {
-        originalAddFilesToUI(files, prepend);
-        updateFileCount();
-    };
-
-    updateFileCount();
+    // Initialize
+    loadFiles();
 })();

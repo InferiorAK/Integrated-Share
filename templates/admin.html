@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integrated Share · Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="admin-body">
+<div class="admin-wrap">
+
+    <div class="admin-topbar">
+        <div class="admin-topbar-left">
+            <div class="admin-brand">
+                <i class="fas fa-shield-halved"></i> Admin Panel
+            </div>
+            <a href="/" class="admin-back"><i class="fas fa-arrow-left"></i> Back to app</a>
+        </div>
+        <div class="admin-topbar-right">
+            <span style="font-size:.82rem;color:#5F6368;">{{ username }}</span>
+            <button class="admin-logout" onclick="doLogout()">
+                <i class="fas fa-right-from-bracket"></i> Sign out
+            </button>
+        </div>
+    </div>
+
+    <div class="stats-grid" id="statsGrid">
+        <div class="stat-card">
+            <div class="stat-val" id="sUsers">—</div>
+            <div class="stat-lbl"><i class="fas fa-users"></i> Users</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val" id="sFiles">—</div>
+            <div class="stat-lbl"><i class="fas fa-file"></i> Files</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val" id="sShares">—</div>
+            <div class="stat-lbl"><i class="fas fa-share-alt"></i> Shares</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-val" id="sStorage" style="font-size:1.3rem">—</div>
+            <div class="stat-lbl"><i class="fas fa-database"></i> Storage used</div>
+        </div>
+    </div>
+
+    <div class="tab-bar">
+        <button class="tab-btn active" onclick="switchTab('users', this)">
+            <i class="fas fa-users"></i> Users
+        </button>
+        <button class="tab-btn" onclick="switchTab('files', this)">
+            <i class="fas fa-folder-open"></i> Files
+        </button>
+        <button class="tab-btn" onclick="switchTab('logs', this)">
+            <i class="fas fa-shield-halved"></i> Security Logs
+        </button>
+    </div>
+
+    <div class="tab-panel active" id="tab-users">
+        <div class="tbl-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Username</th><th>Email</th><th>Storage</th>
+                        <th>Files</th><th>Joined</th><th></th>
+                    </tr>
+                </thead>
+                <tbody id="usersBody"><tr class="empty-row"><td colspan="6">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="tab-panel" id="tab-files">
+        <div class="tbl-wrap">
+            <table>
+                <thead>
+                    <tr><th>Filename</th><th>Size</th><th>Owner</th><th>Uploaded</th><th></th></tr>
+                </thead>
+                <tbody id="filesBody"><tr class="empty-row"><td colspan="5">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="tab-panel" id="tab-logs">
+        <div class="tbl-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Timestamp (UTC)</th><th>Sev.</th><th>Category</th>
+                        <th>User</th><th>Action</th><th>Target</th>
+                        <th>Source IP</th><th>Outcome</th>
+                    </tr>
+                </thead>
+                <tbody id="logsBody"><tr class="empty-row"><td colspan="8">Loading…</td></tr></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div style="margin-top:2rem;text-align:center;font-size:.78rem;color:#9AA0A6;border-top:1px solid #E8EAED;padding-top:1.5rem;">
+        Integrated Share &copy; 2026 &middot; Team 0xTJRS23
+    </div>
+</div>
+
+<script>
+const API = window.location.origin;
+
+window.doLogout = async function () {
+    try { await fetch(`${API}/api/auth/logout`, { method: 'POST' }); } catch {}
+    window.location.href = '/login';
+};
+
+function switchTab(name, btn) {
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    btn.classList.add('active');
+}
+
+async function loadStats() {
+    const res  = await fetch(`${API}/api/admin/stats`);
+    const data = await res.json();
+    document.getElementById('sUsers').textContent   = data.total_users;
+    document.getElementById('sFiles').textContent   = data.total_files;
+    document.getElementById('sShares').textContent  = data.total_shares;
+    document.getElementById('sStorage').textContent = data.total_storage;
+}
+
+async function loadUsers() {
+    const res   = await fetch(`${API}/api/admin/users`);
+    const users = await res.json();
+    const tbody = document.getElementById('usersBody');
+    if (!users.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="6">No users yet</td></tr>'; return; }
+    tbody.innerHTML = users.map(u => `
+        <tr>
+            <td><strong>${u.username}</strong> ${u.is_admin ? '<span class="badge-admin">admin</span>' : ''}</td>
+            <td>${u.email}</td>
+            <td>${u.storage_used} / ${u.storage_limit}</td>
+            <td>${u.file_count}</td>
+            <td>${u.created_at}</td>
+            <td>${u.is_admin ? '' : `<button class="del-btn" onclick="deleteUser('${u.id}')"><i class="fas fa-trash"></i></button>`}</td>
+        </tr>`).join('');
+}
+
+async function deleteUser(id) {
+    if (!confirm('Delete this user and all their files?')) return;
+    const res = await fetch(`${API}/api/admin/users/${id}`, { method: 'DELETE' });
+    const d   = await res.json();
+    if (d.success) { loadUsers(); loadStats(); } else { alert(d.error); }
+}
+
+async function loadFiles() {
+    const res   = await fetch(`${API}/api/admin/files`);
+    const files = await res.json();
+    const tbody = document.getElementById('filesBody');
+    if (!files.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="5">No files uploaded yet</td></tr>'; return; }
+    tbody.innerHTML = files.map(f => `
+        <tr>
+            <td>${f.original_name}</td>
+            <td>${f.size}</td>
+            <td>${f.owner}</td>
+            <td>${f.uploaded_at}</td>
+            <td><button class="del-btn" onclick="deleteFile('${f.id}')"><i class="fas fa-trash"></i></button></td>
+        </tr>`).join('');
+}
+
+async function deleteFile(id) {
+    if (!confirm('Delete this file permanently?')) return;
+    const res = await fetch(`${API}/api/admin/files/${id}`, { method: 'DELETE' });
+    const d   = await res.json();
+    if (d.success) { loadFiles(); loadStats(); } else { alert(d.error); }
+}
+
+function sevClass(s) {
+    return { INFO: 'sev-info', LOW: 'sev-low', MEDIUM: 'sev-medium', HIGH: 'sev-high' }[s] || 'sev-info';
+}
+
+async function loadLogs() {
+    const res  = await fetch(`${API}/api/admin/logs`);
+    const logs = await res.json();
+    const tbody = document.getElementById('logsBody');
+    if (!logs.length) { tbody.innerHTML = '<tr class="empty-row"><td colspan="8">No activity yet</td></tr>'; return; }
+    tbody.innerHTML = logs.map(l => `
+        <tr>
+            <td class="log-ts">${l.timestamp}</td>
+            <td><span class="${sevClass(l.severity)}">${l.severity}</span></td>
+            <td><span class="cat-badge">${l.event_category}</span></td>
+            <td>${l.username}</td>
+            <td class="log-action">${l.action}</td>
+            <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${l.file_name}">${l.file_name}</td>
+            <td class="log-ip">${l.ip_address}</td>
+            <td class="${l.outcome === 'SUCCESS' ? 'outcome-ok' : 'outcome-fail'}">${l.outcome}</td>
+        </tr>`).join('');
+}
+
+loadStats();
+loadUsers();
+loadFiles();
+loadLogs();
+</script>
+</body>
+</html>

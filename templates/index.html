@@ -3,51 +3,124 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Integrated Share · File Sharing</title>
+    <title>Integrated Share</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400;14..32,500;14..32,600;14..32,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-    <div class="card">
-        <div class="app-header">
-            <i class="fas fa-share-nodes"></i>
-            <h1>Integrated Share <span>local sharing</span></h1>
-        </div>
+<body class="drive-body">
 
-        <div class="upload-section">
-            <div class="drop-zone" id="dropZone">
-                <i class="fas fa-cloud-upload-alt"></i>
-                <h3>drag & drop files</h3>
-                <p>or use the button to browse</p>
-                <button class="select-btn" id="selectFilesBtn" type="button">
-                    <i class="fas fa-folder-open"></i> choose files
-                </button>
-                <input type="file" id="fileInput" multiple hidden>
+    <header class="topbar">
+        <div class="topbar-logo">
+            <div class="topbar-logo-icon"><i class="fas fa-share-nodes"></i></div>
+            <div>
+                <div class="topbar-logo-name">Integrated Share</div>
+                <div class="topbar-logo-sub">RUET Campus</div>
             </div>
         </div>
 
-        <div class="shared-header">
-            <h2><i class="fas fa-link"></i> shared files</h2>
-            <span class="badge-light" id="fileCount">0 items</span>
+        <div class="topbar-search">
+            <i class="fas fa-search"></i>
+            <input type="text" id="searchInput" placeholder="Search files…" autocomplete="off">
         </div>
 
-        <div id="fileList" class="file-list">
-            <!-- Files will be loaded here -->
-        </div>
-
-        <div class="upload-progress" id="uploadProgress" style="display: none;">
-            <div class="progress-bar">
-                <div class="progress-fill" id="progressFill"></div>
+        <div class="topbar-right">
+            <div class="storage-compact">
+                <div class="storage-compact-bar">
+                    <div class="storage-compact-fill" id="storageFill"></div>
+                </div>
+                <span class="storage-compact-text" id="storageText">…</span>
             </div>
-            <span id="progressText">Uploading...</span>
-        </div>
-
-        <div class="demo-note">
-            <i class="fas fa-server"></i> Local Flask Server © 2026
-            <button class="clear-btn" id="clearAllBtn" style="margin-left: 1rem; background: none; border: 1px solid #dbe7f5; padding: 0.2rem 0.8rem; border-radius: 20px; cursor: pointer; color: #7793b5;">
-                <i class="fas fa-trash"></i> Clear All
+            <button class="topbar-icon-btn" id="adminLink" style="display:none;"
+                    onclick="window.location.href='/admin'" title="Admin Panel">
+                <i class="fas fa-shield-halved"></i>
             </button>
+            <div class="user-avatar" id="userAvatar">?</div>
+            <button class="topbar-icon-btn" onclick="doLogout()" title="Sign out">
+                <i class="fas fa-right-from-bracket"></i>
+            </button>
+        </div>
+    </header>
+
+    <div class="drive-content">
+        <aside class="sidebar">
+            <button class="sidebar-new-btn" id="sidebarNewBtn">
+                <i class="fas fa-plus"></i> New Upload
+            </button>
+            <nav class="sidebar-nav">
+                <a class="nav-item active" data-filter="mine">
+                    <i class="fas fa-folder"></i> My Files
+                </a>
+                <a class="nav-item" data-filter="shared">
+                    <i class="fas fa-user-group"></i> Shared with me
+                </a>
+            </nav>
+            <div class="sidebar-storage">
+                <div class="sidebar-storage-label">Storage used</div>
+                <div class="sidebar-storage-bar">
+                    <div class="sidebar-storage-fill" id="sideStorageFill"></div>
+                </div>
+                <div class="sidebar-storage-text" id="sideStorageText">…</div>
+            </div>
+        </aside>
+
+        <main class="drive-main">
+            <div class="drive-toolbar">
+                <h2 class="section-title" id="sectionTitle">My Files</h2>
+                <div class="toolbar-actions">
+                    <span class="badge-light" id="fileCount">0 items</span>
+                    <button class="toolbar-btn" id="clearAllBtn" title="Clear all my files">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="drop-zone" id="dropZone" style="display:none;">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <h3>Drop files here to upload</h3>
+                <p>Or use the "New Upload" button on the left</p>
+            </div>
+
+            <div class="file-grid" id="fileList"></div>
+
+            <div class="upload-progress" id="uploadProgress" style="display:none;">
+                <div class="progress-label" id="progressText">Uploading…</div>
+                <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+            </div>
+        </main>
+    </div>
+
+    <input type="file" id="fileInput" multiple hidden accept="*/*">
+
+    <div class="drag-overlay" id="dragOverlay">
+        <div class="drag-overlay-inner">
+            <i class="fas fa-cloud-upload-alt"></i>
+            <p>Drop to upload</p>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="shareModal">
+        <div class="modal">
+            <h3><i class="fas fa-share-alt"></i> Share File</h3>
+            <p id="shareModalFileName" style="font-size:.82rem;color:#5F6368;margin:.3rem 0 1rem;word-break:break-all;"></p>
+            <div class="modal-section">
+                <label>Public link <span style="font-weight:400;text-transform:none;letter-spacing:0">(expires in 7 days)</span></label>
+                <button class="btn-primary" style="width:100%" onclick="generateShareLink()">
+                    <i class="fas fa-link"></i> Copy link to clipboard
+                </button>
+            </div>
+            <div class="modal-divider">or share directly with a user</div>
+            <div class="modal-section">
+                <label>Username</label>
+                <input type="text" id="shareUsername" placeholder="Enter their username…">
+            </div>
+            <div class="modal-feedback" id="shareFeedback"></div>
+            <div style="display:flex;gap:.5rem;margin-top:1rem">
+                <button class="btn-secondary" style="flex:1" onclick="shareToUser()">
+                    <i class="fas fa-user-plus"></i> Share
+                </button>
+                <button class="btn-cancel" onclick="closeShareModal()">Cancel</button>
+            </div>
         </div>
     </div>
 

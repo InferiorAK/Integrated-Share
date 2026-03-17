@@ -6,16 +6,32 @@ from flask import session, request, redirect, url_for, jsonify
 
 from .extensions import db
 from .models import ActivityLog
+from .logger import log_siem_event
 
 _SIEM_MAP = {
     'login':             ('AUTH',    'INFO'),
+    'register':          ('AUTH',    'LOW'),
     'login_failure':     ('AUTH',    'MEDIUM'),
+    'login_rate_limited': ('AUTH',   'HIGH'),
     'logout':            ('AUTH',    'INFO'),
     'upload':            ('FILE_OP', 'LOW'),
     'download':          ('FILE_OP', 'LOW'),
     'delete':            ('FILE_OP', 'MEDIUM'),
     'clear_all':         ('FILE_OP', 'HIGH'),
+    'trash_restore':     ('FILE_OP', 'MEDIUM'),
+    'trash_delete':      ('FILE_OP', 'HIGH'),
+    'folder_create':     ('FILE_OP', 'LOW'),
+    'folder_open':       ('FILE_OP', 'LOW'),
+    'folder_delete':     ('FILE_OP', 'MEDIUM'),
+    'file_rename':       ('FILE_OP', 'LOW'),
+    'folder_rename':     ('FILE_OP', 'LOW'),
     'share_link':        ('SHARING', 'LOW'),
+    'folder_share_link': ('SHARING', 'LOW'),
+    'share_access':      ('SHARING', 'LOW'),
+    'folder_share_access': ('SHARING', 'LOW'),
+    'share_revoke':      ('SHARING', 'MEDIUM'),
+    'preview':           ('FILE_OP', 'LOW'),
+    'profile_update':    ('AUTH', 'LOW'),
     'share_user':        ('SHARING', 'LOW'),
     'admin_delete_user': ('ADMIN',   'HIGH'),
     'admin_delete_file': ('ADMIN',   'MEDIUM'),
@@ -26,6 +42,13 @@ def login_required(f):
     @wraps(f)
     def decorated(*args, **kwargs):
         if 'user_id' not in session:
+            if request.path.startswith('/api/'):
+                return jsonify({'error': 'Authentication required'}), 401
+            return redirect(url_for('auth.login_page'))
+        from .models import User
+        user = db.session.get(User, session.get('user_id'))
+        if not user:
+            session.clear()
             if request.path.startswith('/api/'):
                 return jsonify({'error': 'Authentication required'}), 401
             return redirect(url_for('auth.login_page'))
@@ -46,16 +69,28 @@ def admin_required(f):
 
 def log_action(action, file_name=None, outcome='SUCCESS', username_override=None):
     category, severity = _SIEM_MAP.get(action, ('GENERAL', 'INFO'))
+    username = username_override or session.get('username')
+    ip_addr = request.remote_addr
     db.session.add(ActivityLog(
         user_id        = session.get('user_id'),
-        username       = username_override or session.get('username'),
+        username       = username,
         action         = action,
         file_name      = file_name,
-        ip_address     = request.remote_addr,
+        ip_address     = ip_addr,
         severity       = severity,
         event_category = category,
         outcome        = outcome,
     ))
+    log_siem_event(
+        action=action,
+        severity=severity,
+        event_category=category,
+        outcome=outcome,
+        target=file_name or '-',
+        message='activity_log',
+        username=username or '-',
+        stream='error' if outcome == 'FAILURE' else 'access',
+    )
 
 
 def format_file_size(size_bytes):
